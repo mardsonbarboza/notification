@@ -5,15 +5,23 @@ import {
   ConnectedSocket,
   OnGatewayConnection,
   OnGatewayDisconnect,
+  OnGatewayInit,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { WebSocketServer } from '@nestjs/websockets';
 import { Logger } from '@nestjs/common';
 import { EventsService } from './events.service';
-import { NotificationService } from '../../notification/notification.service';
+import { NotificationService } from '../notification/notification.service';
 
-@WebSocketGateway()
-export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
+@WebSocketGateway({
+  cors: {
+    origin: '*',
+    credentials: true,
+  },
+})
+export class EventsGateway
+  implements OnGatewayConnection, OnGatewayDisconnect, OnGatewayInit
+{
   @WebSocketServer()
   server: Server;
 
@@ -23,6 +31,12 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private eventsService: EventsService,
     private notificationsService: NotificationService,
   ) {}
+
+  // Inicializa o servidor no service
+  afterInit(server: Server) {
+    this.eventsService.setServer(server);
+    this.logger.log('🚀 WebSocket Server inicializado!');
+  }
 
   handleConnection(client: Socket) {
     this.logger.log(`✅ Cliente conectado: ${client.id}`);
@@ -39,26 +53,21 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   ) {
     client.join(roomName);
     this.logger.log(`📍 Cliente entrou na sala: ${roomName}`);
+
+    const userCount = this.eventsService.getRoomUserCount(roomName);
+
     this.server.to(roomName).emit('userJoined', {
       clientId: client.id,
       message: `Um novo usuário entrou`,
+      userCount: userCount,
       timestamp: new Date(),
     });
   }
 
   @SubscribeMessage('notifyRoom')
   async handleNotifyRoom(@MessageBody() { room, userId, title, message }: any) {
-    this.logger.log(`📤 Notificação: ${title}`);
-
-    // 💾 Salva no banco
-    await this.notificationsService.create(userId, title, message);
-
-    // 📤 Envia via WebSocket
-    this.server.to(room).emit('notification', {
-      title,
-      message,
-      timestamp: new Date(),
-    });
+    // Agora usa o service
+    await this.eventsService.notifyRoom(room, userId, title, message);
   }
 
   @SubscribeMessage('notifyUser')
@@ -66,17 +75,8 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: Socket,
     @MessageBody() { userId, title, message }: any,
   ) {
-    this.logger.log(`📧 Privado: ${title}`);
-
-    // 💾 Salva no banco
-    await this.notificationsService.create(userId, title, message);
-
-    // 📤 Envia privado
-    this.server.to(userId).emit('privateNotification', {
-      title,
-      message,
-      timestamp: new Date(),
-    });
+    // Agora usa o service
+    await this.eventsService.notifyUser(userId, title, message);
   }
 
   @SubscribeMessage('getHistory')
@@ -86,10 +86,22 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   ) {
     this.logger.log(`📋 Histórico: ${userId}`);
 
-    // 📖 Pega do banco
     const notifications = await this.notificationsService.getByUser(userId);
 
-    // 📤 Envia histórico
     client.emit('notificationHistory', notifications);
+  }
+
+  @SubscribeMessage('checkUserOnline')
+  handleCheckUserOnline(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() userId: string,
+  ) {
+    const isOnline = this.eventsService.isUserOnline(userId);
+
+    client.emit('userOnlineStatus', {
+      userId,
+      isOnline,
+      timestamp: new Date(),
+    });
   }
 }

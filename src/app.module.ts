@@ -1,13 +1,15 @@
 import { Module } from '@nestjs/common';
-import { AppController } from './app.controller';
-import { AppService } from './app.service';
-import { EventsGateway } from './events/events/events.gateway';
-import { EventsModule } from './events/events/events.module';
+import { PrismaModule } from './prisma/prisma.module'; // ← Adicione
+
 import { NotificationModule } from './notification/notification.module';
+import { EventsModule } from './events/events.module';
 
 @Module({
-  imports: [EventsModule, NotificationModule],
-  controllers: [AppController],
-  providers: [AppService, EventsGateway],
+  imports: [
+    PrismaModule, // ← ADICIONE ISSO (primeira linha!)
+    EventsModule,
+    NotificationModule,
+    // ... outros módulos
+  ],
 })
 export class AppModule {}
