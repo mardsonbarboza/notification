@@ -1,9 +1,11 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { EventsGateway } from './events.gateway';
 import { EventsService } from './events.service';
+import { NotificationModule } from '../../notification/notification.module';
 
 @Module({
+  imports: [forwardRef(() => NotificationModule)],
   providers: [EventsGateway, EventsService],
-  exports: [EventsService], // exporta se outros módulos precisarem
+  exports: [EventsService],
 })
 export class EventsModule {}
